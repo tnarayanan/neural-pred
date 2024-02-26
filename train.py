@@ -42,31 +42,51 @@ def extract_features(feature_extractor, data_loader, pca):
 
 
 def train(args: Arguments):
-    img_dir = os.path.join(args.data_dir, "training_split", "training_images")
-    num_images = len(os.listdir(img_dir))
-    num_val = int(np.round(num_images * args.val_split / 100.0))
-    idxs = np.arange(num_images)
-    val_idx, train_idx = idxs[:num_val], idxs[num_val:]
+    save_prefix = f"runs/{args.model}_{'_'.join(args.layers)}/{args.run_id}"
+    os.makedirs(save_prefix, exist_ok=True)
+    print(f"\nSaving run data to {save_prefix}\n")
 
-    train_dataset = ImageDataset(args, train_idx)
-    val_dataset = ImageDataset(args, val_idx)
-    print(f"{len(train_dataset) = }, {len(val_dataset) = }")
+    train_features_path = os.path.join(save_prefix, 'train_features.npy')
+    val_features_path = os.path.join(save_prefix, 'val_features.npy')
+    train_idx_path = os.path.join(save_prefix, 'train_idx.npy')
+    val_idx_path = os.path.join(save_prefix, 'val_idx.npy')
 
-    train_dataloader = DataLoader(train_dataset, batch_size=128)
-    val_dataloader = DataLoader(val_dataset, batch_size=128)
+    if os.path.exists(train_features_path) and os.path.exists(val_features_path) and os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
+        train_features = np.load(train_features_path)
+        val_features = np.load(val_features_path)
+        train_idx = np.load(train_idx_path)
+        val_idx = np.load(val_idx_path)
+    else:
+        img_dir = os.path.join(args.data_dir, "training_split", "training_images")
+        num_images = len(os.listdir(img_dir))
+        num_val = int(np.round(num_images * args.val_split / 100.0))
+        idxs = np.arange(num_images)
+        val_idx, train_idx = idxs[:num_val], idxs[num_val:]
+        print(val_idx.dtype)
 
-    model = torch.hub.load('pytorch/vision:v0.10.0', 'alexnet')
-    model.to(device=args.device)
-    model.eval()
+        train_dataset = ImageDataset(args, train_idx)
+        val_dataset = ImageDataset(args, val_idx)
+        print(f"{len(train_dataset) = }, {len(val_dataset) = }")
 
-    model_layer = 'features.2'
-    feature_extractor = create_feature_extractor(model, return_nodes=[model_layer])
+        train_dataloader = DataLoader(train_dataset, batch_size=128)
+        val_dataloader = DataLoader(val_dataset, batch_size=128)
 
-    pca = fit_pca(feature_extractor, train_dataloader)
-    train_features = extract_features(feature_extractor, train_dataloader, pca)
-    val_features = extract_features(feature_extractor, val_dataloader, pca)
+        model = torch.hub.load('pytorch/vision:v0.10.0', args.model, pretrained=True)
+        model.to(device=args.device)
+        model.eval()
 
-    del model, pca
+        feature_extractor = create_feature_extractor(model, return_nodes=args.layers)
+
+        pca = fit_pca(feature_extractor, train_dataloader)
+        train_features = extract_features(feature_extractor, train_dataloader, pca)
+        val_features = extract_features(feature_extractor, val_dataloader, pca)
+
+        del model, pca
+
+        np.save(train_features_path, train_features)
+        np.save(val_features_path, val_features)
+        np.save(train_idx_path, train_idx)
+        np.save(val_idx_path, val_idx)
 
     fmri_dir = os.path.join(args.data_dir, "training_split", "training_fmri")
     print("Loading left hemisphere training data...")
@@ -99,10 +119,10 @@ def train(args: Arguments):
     for v in tqdm(range(rh_fmri_val_pred.shape[1])):
         rh_correlation[v] = corr(rh_fmri_val_pred[:,v], rh_fmri[val_idx][:,v])[0]
 
-    # print(f"Left mean corr = {np.mean(lh_correlation)}")
+    print(f"Left mean corr = {np.mean(lh_correlation)}")
     print(f"Right mean corr = {np.mean(rh_correlation)}")
 
 
 if __name__ == '__main__':
-    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1)
+    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1, run_id='e1315447')
     train(args)
