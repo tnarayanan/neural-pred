@@ -103,14 +103,27 @@ def train(args: Arguments):
     )
 
     if args.roi is not None:
-        lh_streams = np.load(os.path.join(args.data_dir, 'roi_masks', 'lh.streams_challenge_space.npy'), allow_pickle=True)
-        rh_streams = np.load(os.path.join(args.data_dir, 'roi_masks', 'rh.streams_challenge_space.npy'), allow_pickle=True)
+        if args.roi in ["V1v", "V1d", "V2v", "V2d", "V3v", "V3d", "hV4"]:
+            roi_class = 'prf-visualrois'
+        elif args.roi in ["EBA", "FBA-1", "FBA-2", "mTL-bodies"]:
+            roi_class = 'floc-bodies'
+        elif args.roi in ["OFA", "FFA-1", "FFA-2", "mTL-faces", "aTL-faces"]:
+            roi_class = 'floc-faces'
+        elif args.roi in ["OPA", "PPA", "RSC"]:
+            roi_class = 'floc-places'
+        elif args.roi in ["OWFA", "VWFA-1", "VWFA-2", "mfs-words", "mTL-words"]:
+            roi_class = 'floc-words'
+        elif args.roi in ["early", "midventral", "midlateral", "midparietal", "ventral", "lateral", "parietal"]:
+            roi_class = 'streams'
 
-        mapping = np.load(os.path.join(args.data_dir, 'roi_masks', 'mapping_streams.npy'), allow_pickle=True).item()
+        lh_rois = np.load(os.path.join(args.data_dir, 'roi_masks', f'lh.{roi_class}_challenge_space.npy'), allow_pickle=True)
+        rh_rois = np.load(os.path.join(args.data_dir, 'roi_masks', f'rh.{roi_class}_challenge_space.npy'), allow_pickle=True)
+
+        mapping = np.load(os.path.join(args.data_dir, 'roi_masks', f'mapping_{roi_class}.npy'), allow_pickle=True).item()
         inverse_mapping = {name: val for val, name in mapping.items()}
 
-        lh_roi_mask = np.where(lh_streams == inverse_mapping[args.roi])[0]
-        rh_roi_mask = np.where(rh_streams == inverse_mapping[args.roi])[0]
+        lh_roi_mask = np.where(lh_rois == inverse_mapping[args.roi])[0]
+        rh_roi_mask = np.where(rh_rois == inverse_mapping[args.roi])[0]
     else:
         lh_roi_mask = np.arange(lh_fmri.shape[1])
         rh_roi_mask = np.arange(rh_fmri.shape[1])
@@ -141,5 +154,5 @@ def train(args: Arguments):
 
 
 if __name__ == '__main__':
-    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1, roi='ventral', run_id='e1315447') #model='vgg19', layers=['features.29'], roi=None)
+    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1, roi='hV4', run_id='e1315447') #model='vgg19', layers=['features.27'], roi=None)
     train(args)
