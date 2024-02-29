@@ -83,6 +83,7 @@ def train(args: Arguments):
 
         del model, pca
 
+        np.save(os.path.join(save_prefix, f"subj{args.subj}_{'_'.join(args.layers)}_pca.npy"), pca.transform_)
         np.save(train_features_path, train_features)
         np.save(val_features_path, val_features)
         np.save(train_idx_path, train_idx)
@@ -100,6 +101,22 @@ def train(args: Arguments):
     print(
         f"RH data shape (Training stimulus images x RH voxels): {rh_fmri.shape}"
     )
+
+    if args.roi is not None:
+        lh_streams = np.load(os.path.join(args.data_dir, 'roi_masks', 'lh.streams_challenge_space.npy'), allow_pickle=True)
+        rh_streams = np.load(os.path.join(args.data_dir, 'roi_masks', 'rh.streams_challenge_space.npy'), allow_pickle=True)
+
+        mapping = np.load(os.path.join(args.data_dir, 'roi_masks', 'mapping_streams.npy'), allow_pickle=True).item()
+        inverse_mapping = {name: val for val, name in mapping.items()}
+
+        lh_roi_mask = np.where(lh_streams == inverse_mapping[args.roi])[0]
+        rh_roi_mask = np.where(rh_streams == inverse_mapping[args.roi])[0]
+    else:
+        lh_roi_mask = np.arange(lh_fmri.shape[1])
+        rh_roi_mask = np.arange(rh_fmri.shape[1])
+    
+    lh_fmri = lh_fmri[:, lh_roi_mask]
+    rh_fmri = rh_fmri[:, rh_roi_mask]
 
     reg_lh = LinearRegression().fit(train_features, lh_fmri[train_idx])
     reg_rh = LinearRegression().fit(train_features, rh_fmri[train_idx])
@@ -124,5 +141,5 @@ def train(args: Arguments):
 
 
 if __name__ == '__main__':
-    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1, run_id='e1315447')
+    args = Arguments(1, '../algonauts_2023_challenge_data', 0.1, roi='ventral', run_id='e1315447') #model='vgg19', layers=['features.29'], roi=None)
     train(args)
