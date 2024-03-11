@@ -85,10 +85,12 @@ def train(args: Arguments):
         with open(pca_path, 'wb') as f:
             pickle.dump(pca, f)
 
-        del model, pca
+        del model
 
     train_features = extract_features(feature_extractor, train_dataloader, pca)
     val_features = extract_features(feature_extractor, val_dataloader, pca)
+
+    del pca
 
     fmri_dir = os.path.join(args.data_dir, "training_split", "training_fmri")
     print("Loading left hemisphere training data...")
