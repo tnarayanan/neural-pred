@@ -30,7 +30,7 @@ def fit_pca(feature_extractor, data_loader, batch_size=256):
     return pca
 
 
-def extract_features(feature_extractor, data_loader, pca):
+def extract_features(feature_extractor, data_loader, pca_matrix):
     features = []
     for _, d in tqdm(enumerate(data_loader), total=len(data_loader)):
         # Extract features
@@ -38,8 +38,7 @@ def extract_features(feature_extractor, data_loader, pca):
         # Flatten the features
         ft = torch.hstack([torch.flatten(l, start_dim=1) for l in ft.values()])
         # Apply PCA transform
-        # ft = pca.transform(ft.cpu().detach().numpy())
-        ft = (ft.cpu().detach().numpy()) @ pca.components_.T
+        ft = (ft.cpu().detach().numpy()) @ pca_matrix.T
         features.append(ft)
     return np.vstack(features)
 
@@ -50,6 +49,7 @@ def train(args: Arguments):
     print(f"\nSaving run data to {save_prefix}\n")
 
     pca_path = os.path.join(save_prefix, f"subj{args.subj}_{'_'.join(args.layers)}_pca.pkl")
+    pca_matrix_path = os.path.join(save_prefix, f"subj{args.subj}_{'_'.join(args.layers)}_pca_matrix.npy")
     train_features_path = os.path.join(save_prefix, "train_features.npy")
     val_features_path = os.path.join(save_prefix, "val_features.npy")
     train_idx_path = os.path.join(save_prefix, "train_idx.npy")
@@ -88,14 +88,21 @@ def train(args: Arguments):
 
     # Train PCA on image model output features
     print("\n==========\nTraining PCA\n==========")
-    if os.path.exists(pca_path):
+    if os.path.exists(pca_matrix_path):
+        pca_matrix = np.load(pca_matrix_path)
+        print("Loaded PCA matrix from disk")
+    elif os.path.exists(pca_path):
         with open(pca_path, "rb") as f:
             pca = pickle.load(f)
-        print("Loaded PCA from disk")
+        print("Loaded PCA object from disk")
+        pca_matrix = pca.components_
+        del pca
     else:
         pca = fit_pca(feature_extractor, train_dataloader)
         with open(pca_path, "wb") as f:
             pickle.dump(pca, f)
+        np.save(pca_matrix_path, pca.components_)
+        del pca
 
     # Extract PCA components from image model output features
     print("\n==========\nExtracting features using PCA components\n==========")
@@ -104,12 +111,12 @@ def train(args: Arguments):
         val_features = np.load(val_features_path)
         print("Loaded features from disk")
     else:
-        train_features = extract_features(feature_extractor, train_dataloader, pca)
-        val_features = extract_features(feature_extractor, val_dataloader, pca)
+        train_features = extract_features(feature_extractor, train_dataloader, pca_matrix)
+        val_features = extract_features(feature_extractor, val_dataloader, pca_matrix)
         np.save(train_features_path, train_features)
         np.save(val_features_path, val_features)
 
-    del model, pca
+    del model
 
     fmri_dir = os.path.join(args.data_dir, "training_split", "training_fmri")
     print("Loading left hemisphere training data...")
@@ -153,11 +160,25 @@ def train(args: Arguments):
         lh_fmri_roi_masked = lh_fmri[:, lh_roi_mask]
         rh_fmri_roi_masked = rh_fmri[:, rh_roi_mask]
 
-        reg_lh = LinearRegression().fit(train_features, lh_fmri_roi_masked[train_idx])
-        reg_rh = LinearRegression().fit(train_features, rh_fmri_roi_masked[train_idx])
+        lh_transform_matrix_path = os.path.join(save_prefix, "transforms", f"subj{args.subj}_lh_{'_'.join(args.layers)}_{roi}_transform.npy")
+        rh_transform_matrix_path = os.path.join(save_prefix, "transforms", f"subj{args.subj}_rh_{'_'.join(args.layers)}_{roi}_transform.npy")
 
-        lh_fmri_val_pred = reg_lh.predict(val_features)
-        rh_fmri_val_pred = reg_rh.predict(val_features)
+        if os.path.exists(lh_transform_matrix_path):
+            lh_transform_matrix = np.load(lh_transform_matrix_path)
+        else:
+            reg_lh = LinearRegression().fit(train_features, lh_fmri_roi_masked[train_idx])
+            lh_transform_matrix = reg_lh.coef_ # (n_targets, n_features)
+            np.save(lh_transform_matrix_path, lh_transform_matrix)
+        
+        if os.path.exists(rh_transform_matrix_path):
+            rh_transform_matrix = np.load(rh_transform_matrix_path)
+        else:
+            reg_rh = LinearRegression().fit(train_features, rh_fmri_roi_masked[train_idx])
+            rh_transform_matrix = reg_rh.coef_ # (n_targets, n_features)
+            np.save(rh_transform_matrix_path, rh_transform_matrix)
+
+        lh_fmri_val_pred = val_features @ lh_transform_matrix.T
+        rh_fmri_val_pred = val_features @ rh_transform_matrix.T
 
         # Empty correlation array of shape: (LH vertices)
         lh_correlation = np.zeros(lh_fmri_val_pred.shape[1])
@@ -181,8 +202,8 @@ if __name__ == "__main__":
     cmd_args = parser.parse_args()
 
     # pool1
-    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.4"], roi=cmd_args.rois, run_id="8227761f")
+    # args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.4"], roi=cmd_args.rois, run_id="8227761f")
 
     # pool4
-    # args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], rois=cmd_args.rois, run_id="40ccc02e")
+    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], rois=cmd_args.rois, run_id="8fed3485")
     train(args)
