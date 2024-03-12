@@ -162,13 +162,13 @@ def train(args: Arguments):
         lh_correlation = np.zeros(lh_fmri_val_pred.shape[1])
         # Correlate each predicted LH vertex with the corresponding ground truth vertex
         for v in tqdm(range(lh_fmri_val_pred.shape[1])):
-            lh_correlation[v] = corr(lh_fmri_val_pred[:, v], lh_fmri[val_idx][:, v])[0]
+            lh_correlation[v] = corr(lh_fmri_val_pred[:, v], lh_fmri_roi_masked[val_idx][:, v])[0]
 
         # Empty correlation array of shape: (RH vertices)
         rh_correlation = np.zeros(rh_fmri_val_pred.shape[1])
         # Correlate each predicted RH vertex with the corresponding ground truth vertex
         for v in tqdm(range(rh_fmri_val_pred.shape[1])):
-            rh_correlation[v] = corr(rh_fmri_val_pred[:, v], rh_fmri[val_idx][:, v])[0]
+            rh_correlation[v] = corr(rh_fmri_val_pred[:, v], rh_fmri_roi_masked[val_idx][:, v])[0]
 
         print(f"Left mean corr = {np.mean(lh_correlation)}")
         print(f"Right mean corr = {np.mean(rh_correlation)}")
