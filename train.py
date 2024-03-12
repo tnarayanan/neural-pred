@@ -128,6 +128,7 @@ def train(args: Arguments):
     rh_fmri = np.load(os.path.join(fmri_dir, "rh_training_fmri.npy"))
     print(f"RH data shape (Training stimulus images x RH voxels): {rh_fmri.shape}")
 
+    os.makedirs(os.path.join(save_prefix, "transforms"), exist_ok=True)
     for roi in args.rois:
         print(f"\n=========\nROI: {roi}\n=========")
         if roi == "all" or roi is None:
