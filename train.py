@@ -96,6 +96,7 @@ def train(args: Arguments):
             pca = pickle.load(f)
         print("Loaded PCA object from disk")
         pca_matrix = pca.components_
+        np.save(pca_matrix_path, pca.components_)
         del pca
     else:
         pca = fit_pca(feature_extractor, train_dataloader)
