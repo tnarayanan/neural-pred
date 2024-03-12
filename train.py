@@ -55,6 +55,7 @@ def train(args: Arguments):
     val_idx_path = os.path.join(save_prefix, "val_idx.npy")
 
     # Create train/val indices based on split
+    print("==========\nCreating train/val indices\n==========\n")
     if os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
         train_idx = np.load(train_idx_path)
         val_idx = np.load(val_idx_path)
@@ -69,6 +70,7 @@ def train(args: Arguments):
         np.save(val_idx_path, val_idx)
 
     # Load image dataset and create dataloaders
+    print("==========\nLoading image dataset\n==========\n")
     train_dataset = ImageDataset(args, train_idx)
     val_dataset = ImageDataset(args, val_idx)
     print(f"{len(train_dataset) = }, {len(val_dataset) = }")
@@ -76,12 +78,14 @@ def train(args: Arguments):
     val_dataloader = DataLoader(val_dataset, batch_size=256)
 
     # Load image model and set to eval mode, and create feature extractor
+    print("==========\nLoading image model\n==========\n")
     model = torch.hub.load("pytorch/vision:v0.10.0", args.model, pretrained=True)
     model.to(device=args.device)
     model.eval()
     feature_extractor = create_feature_extractor(model, return_nodes=args.layers)
 
     # Train PCA on image model output features
+    print("==========\nTraining PCA\n==========\n")
     if os.path.exists(pca_path):
         with open(pca_path, 'rb') as f:
             pca = pickle.load(f)
@@ -91,6 +95,7 @@ def train(args: Arguments):
             pickle.dump(pca, f)
 
     # Extract PCA components from image model output features
+    print("==========\nExtracting PCA components\n==========\n")
     if os.path.exists(train_features_path) and os.path.exists(val_features_path):
         train_features = np.load(train_features_path)
         val_features = np.load(val_features_path)
@@ -167,5 +172,5 @@ if __name__ == "__main__":
     # args = Arguments(1, '../algonauts_2023_challenge_data', 10, model='vgg19', layers=['features.4'], roi=sys.argv[1])
 
     # pool4
-    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], roi=sys.argv[1])
+    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], roi=sys.argv[1], run_id="40ccc02e")
     train(args)
