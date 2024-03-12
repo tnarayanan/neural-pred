@@ -38,7 +38,8 @@ def extract_features(feature_extractor, data_loader, pca):
         # Flatten the features
         ft = torch.hstack([torch.flatten(l, start_dim=1) for l in ft.values()])
         # Apply PCA transform
-        ft = pca.transform(ft.cpu().detach().numpy())
+        # ft = pca.transform(ft.cpu().detach().numpy())
+        ft = (ft.cpu().detach().numpy()) @ pca.components_.T
         features.append(ft)
     return np.vstack(features)
 
@@ -176,12 +177,12 @@ def train(args: Arguments):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument('--rois', nargs='+', default=["all"])
+    parser.add_argument("--rois", nargs="+", default=["all"])
     cmd_args = parser.parse_args()
-    
+
     # pool1
-    # args = Arguments(1, '../algonauts_2023_challenge_data', 10, model='vgg19', layers=['features.4'], roi=sys.argv[1])
+    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.4"], roi=cmd_args.rois, run_id="8227761f")
 
     # pool4
-    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], rois=cmd_args.rois, run_id="40ccc02e")
+    # args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], rois=cmd_args.rois, run_id="40ccc02e")
     train(args)
