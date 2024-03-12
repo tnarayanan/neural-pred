@@ -1,12 +1,12 @@
 import os
 import pickle
-import sys
+from argparse import ArgumentParser
 
 import numpy as np
+import torch
 from scipy.stats import pearsonr as corr
 from sklearn.decomposition import IncrementalPCA
 from sklearn.linear_model import LinearRegression
-import torch
 from torch.utils.data import DataLoader, random_split
 from torchvision.models.feature_extraction import create_feature_extractor
 from tqdm import tqdm
@@ -55,10 +55,11 @@ def train(args: Arguments):
     val_idx_path = os.path.join(save_prefix, "val_idx.npy")
 
     # Create train/val indices based on split
-    print("==========\nCreating train/val indices\n==========\n")
+    print("\n==========\nCreating train/val indices\n==========")
     if os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
         train_idx = np.load(train_idx_path)
         val_idx = np.load(val_idx_path)
+        print("Loaded indices from disk")
     else:
         img_dir = os.path.join(args.data_dir, "training_split", "training_images")
         num_images = len(os.listdir(img_dir))
@@ -70,7 +71,7 @@ def train(args: Arguments):
         np.save(val_idx_path, val_idx)
 
     # Load image dataset and create dataloaders
-    print("==========\nLoading image dataset\n==========\n")
+    print("\n==========\nLoading image dataset\n==========")
     train_dataset = ImageDataset(args, train_idx)
     val_dataset = ImageDataset(args, val_idx)
     print(f"{len(train_dataset) = }, {len(val_dataset) = }")
@@ -78,27 +79,29 @@ def train(args: Arguments):
     val_dataloader = DataLoader(val_dataset, batch_size=256)
 
     # Load image model and set to eval mode, and create feature extractor
-    print("==========\nLoading image model\n==========\n")
+    print("\n==========\nLoading image model\n==========")
     model = torch.hub.load("pytorch/vision:v0.10.0", args.model, pretrained=True)
     model.to(device=args.device)
     model.eval()
     feature_extractor = create_feature_extractor(model, return_nodes=args.layers)
 
     # Train PCA on image model output features
-    print("==========\nTraining PCA\n==========\n")
+    print("\n==========\nTraining PCA\n==========")
     if os.path.exists(pca_path):
-        with open(pca_path, 'rb') as f:
+        with open(pca_path, "rb") as f:
             pca = pickle.load(f)
+        print("Loaded PCA from disk")
     else:
         pca = fit_pca(feature_extractor, train_dataloader)
-        with open(pca_path, 'wb') as f:
+        with open(pca_path, "wb") as f:
             pickle.dump(pca, f)
 
     # Extract PCA components from image model output features
-    print("==========\nExtracting PCA components\n==========\n")
+    print("\n==========\nExtracting features using PCA components\n==========")
     if os.path.exists(train_features_path) and os.path.exists(val_features_path):
         train_features = np.load(train_features_path)
         val_features = np.load(val_features_path)
+        print("Loaded features from disk")
     else:
         train_features = extract_features(feature_extractor, train_dataloader, pca)
         val_features = extract_features(feature_extractor, val_dataloader, pca)
@@ -116,61 +119,69 @@ def train(args: Arguments):
     rh_fmri = np.load(os.path.join(fmri_dir, "rh_training_fmri.npy"))
     print(f"RH data shape (Training stimulus images x RH voxels): {rh_fmri.shape}")
 
-    if args.roi is not None:
-        if args.roi in ["V1v", "V1d", "V2v", "V2d", "V3v", "V3d", "hV4"]:
-            roi_class = "prf-visualrois"
-        elif args.roi in ["EBA", "FBA-1", "FBA-2", "mTL-bodies"]:
-            roi_class = "floc-bodies"
-        elif args.roi in ["OFA", "FFA-1", "FFA-2", "mTL-faces", "aTL-faces"]:
-            roi_class = "floc-faces"
-        elif args.roi in ["OPA", "PPA", "RSC"]:
-            roi_class = "floc-places"
-        elif args.roi in ["OWFA", "VWFA-1", "VWFA-2", "mfs-words", "mTL-words"]:
-            roi_class = "floc-words"
-        elif args.roi in ["early", "midventral", "midlateral", "midparietal", "ventral", "lateral", "parietal"]:
-            roi_class = "streams"
+    for roi in args.rois:
+        print(f"\n=========\nROI: {roi}\n=========")
+        if roi == "all" or roi is None:
+            lh_roi_mask = np.arange(lh_fmri.shape[1])
+            rh_roi_mask = np.arange(rh_fmri.shape[1])
+        else:
+            if roi in ["V1v", "V1d", "V2v", "V2d", "V3v", "V3d", "hV4"]:
+                roi_class = "prf-visualrois"
+            elif roi in ["EBA", "FBA-1", "FBA-2", "mTL-bodies"]:
+                roi_class = "floc-bodies"
+            elif roi in ["OFA", "FFA-1", "FFA-2", "mTL-faces", "aTL-faces"]:
+                roi_class = "floc-faces"
+            elif roi in ["OPA", "PPA", "RSC"]:
+                roi_class = "floc-places"
+            elif roi in ["OWFA", "VWFA-1", "VWFA-2", "mfs-words", "mTL-words"]:
+                roi_class = "floc-words"
+            elif roi in ["early", "midventral", "midlateral", "midparietal", "ventral", "lateral", "parietal"]:
+                roi_class = "streams"
+            else:
+                raise ValueError(f"Unknown ROI {roi}")
 
-        lh_rois = np.load(os.path.join(args.data_dir, "roi_masks", f"lh.{roi_class}_challenge_space.npy"), allow_pickle=True)
-        rh_rois = np.load(os.path.join(args.data_dir, "roi_masks", f"rh.{roi_class}_challenge_space.npy"), allow_pickle=True)
+            lh_rois = np.load(os.path.join(args.data_dir, "roi_masks", f"lh.{roi_class}_challenge_space.npy"), allow_pickle=True)
+            rh_rois = np.load(os.path.join(args.data_dir, "roi_masks", f"rh.{roi_class}_challenge_space.npy"), allow_pickle=True)
 
-        mapping = np.load(os.path.join(args.data_dir, "roi_masks", f"mapping_{roi_class}.npy"), allow_pickle=True).item()
-        inverse_mapping = {name: val for val, name in mapping.items()}
+            mapping = np.load(os.path.join(args.data_dir, "roi_masks", f"mapping_{roi_class}.npy"), allow_pickle=True).item()
+            inverse_mapping = {name: val for val, name in mapping.items()}
 
-        lh_roi_mask = np.where(lh_rois == inverse_mapping[args.roi])[0]
-        rh_roi_mask = np.where(rh_rois == inverse_mapping[args.roi])[0]
-    else:
-        lh_roi_mask = np.arange(lh_fmri.shape[1])
-        rh_roi_mask = np.arange(rh_fmri.shape[1])
+            lh_roi_mask = np.where(lh_rois == inverse_mapping[roi])[0]
+            rh_roi_mask = np.where(rh_rois == inverse_mapping[roi])[0]
 
-    lh_fmri = lh_fmri[:, lh_roi_mask]
-    rh_fmri = rh_fmri[:, rh_roi_mask]
+        lh_fmri_roi_masked = lh_fmri[:, lh_roi_mask]
+        rh_fmri_roi_masked = rh_fmri[:, rh_roi_mask]
 
-    reg_lh = LinearRegression().fit(train_features, lh_fmri[train_idx])
-    reg_rh = LinearRegression().fit(train_features, rh_fmri[train_idx])
+        reg_lh = LinearRegression().fit(train_features, lh_fmri_roi_masked[train_idx])
+        reg_rh = LinearRegression().fit(train_features, rh_fmri_roi_masked[train_idx])
 
-    lh_fmri_val_pred = reg_lh.predict(val_features)
-    rh_fmri_val_pred = reg_rh.predict(val_features)
+        lh_fmri_val_pred = reg_lh.predict(val_features)
+        rh_fmri_val_pred = reg_rh.predict(val_features)
 
-    # Empty correlation array of shape: (LH vertices)
-    lh_correlation = np.zeros(lh_fmri_val_pred.shape[1])
-    # Correlate each predicted LH vertex with the corresponding ground truth vertex
-    for v in tqdm(range(lh_fmri_val_pred.shape[1])):
-        lh_correlation[v] = corr(lh_fmri_val_pred[:, v], lh_fmri[val_idx][:, v])[0]
+        # Empty correlation array of shape: (LH vertices)
+        lh_correlation = np.zeros(lh_fmri_val_pred.shape[1])
+        # Correlate each predicted LH vertex with the corresponding ground truth vertex
+        for v in tqdm(range(lh_fmri_val_pred.shape[1])):
+            lh_correlation[v] = corr(lh_fmri_val_pred[:, v], lh_fmri[val_idx][:, v])[0]
 
-    # Empty correlation array of shape: (RH vertices)
-    rh_correlation = np.zeros(rh_fmri_val_pred.shape[1])
-    # Correlate each predicted RH vertex with the corresponding ground truth vertex
-    for v in tqdm(range(rh_fmri_val_pred.shape[1])):
-        rh_correlation[v] = corr(rh_fmri_val_pred[:, v], rh_fmri[val_idx][:, v])[0]
+        # Empty correlation array of shape: (RH vertices)
+        rh_correlation = np.zeros(rh_fmri_val_pred.shape[1])
+        # Correlate each predicted RH vertex with the corresponding ground truth vertex
+        for v in tqdm(range(rh_fmri_val_pred.shape[1])):
+            rh_correlation[v] = corr(rh_fmri_val_pred[:, v], rh_fmri[val_idx][:, v])[0]
 
-    print(f"Left mean corr = {np.mean(lh_correlation)}")
-    print(f"Right mean corr = {np.mean(rh_correlation)}")
+        print(f"Left mean corr = {np.mean(lh_correlation)}")
+        print(f"Right mean corr = {np.mean(rh_correlation)}")
 
 
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument('--rois', nargs='+', default=["all"])
+    cmd_args = parser.parse_args()
+    
     # pool1
     # args = Arguments(1, '../algonauts_2023_challenge_data', 10, model='vgg19', layers=['features.4'], roi=sys.argv[1])
 
     # pool4
-    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], roi=sys.argv[1], run_id="40ccc02e")
+    args = Arguments(1, "../algonauts_2023_challenge_data", 10, model="vgg19", layers=["features.27"], rois=cmd_args.rois, run_id="40ccc02e")
     train(args)

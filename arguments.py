@@ -10,7 +10,7 @@ class Arguments:
         val_split: int,
         model: str = "alexnet",
         layers: list[str] = ["features.2"],
-        roi: str | None = None,
+        rois: list[str] | None = None,
         run_id: str = secrets.token_hex(4),
         device: str = "cpu",
     ):
@@ -22,7 +22,7 @@ class Arguments:
 
         self.model = model
         self.layers = layers
-        self.roi = roi
+        self.rois = rois
 
         self.run_id = run_id
 
