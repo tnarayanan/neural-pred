@@ -49,12 +49,13 @@ def train(args: Arguments):
     print(f"\nSaving run data to {save_prefix}\n")
 
     pca_path = os.path.join(save_prefix, f"subj{args.subj}_{'_'.join(args.layers)}_pca.pkl")
+    train_features_path = os.path.join(save_prefix, "train_features.npy")
+    val_features_path = os.path.join(save_prefix, "val_features.npy")
     train_idx_path = os.path.join(save_prefix, "train_idx.npy")
     val_idx_path = os.path.join(save_prefix, "val_idx.npy")
 
-    if os.path.exists(pca_path) and os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
-        with open(pca_path, 'rb') as f:
-            pca = pickle.load(f)
+    # Create train/val indices based on split
+    if os.path.exists(train_idx_path) and os.path.exists(val_idx_path):
         train_idx = np.load(train_idx_path)
         val_idx = np.load(val_idx_path)
     else:
@@ -63,34 +64,43 @@ def train(args: Arguments):
         num_val = int(np.round(num_images / 100 * args.val_split))
         idxs = np.arange(num_images)
         val_idx, train_idx = idxs[:num_val], idxs[num_val:]
-        print(val_idx.dtype)
 
         np.save(train_idx_path, train_idx)
         np.save(val_idx_path, val_idx)
 
-        train_dataset = ImageDataset(args, train_idx)
-        val_dataset = ImageDataset(args, val_idx)
-        print(f"{len(train_dataset) = }, {len(val_dataset) = }")
+    # Load image dataset and create dataloaders
+    train_dataset = ImageDataset(args, train_idx)
+    val_dataset = ImageDataset(args, val_idx)
+    print(f"{len(train_dataset) = }, {len(val_dataset) = }")
+    train_dataloader = DataLoader(train_dataset, batch_size=256)
+    val_dataloader = DataLoader(val_dataset, batch_size=256)
 
-        train_dataloader = DataLoader(train_dataset, batch_size=256)
-        val_dataloader = DataLoader(val_dataset, batch_size=256)
+    # Load image model and set to eval mode, and create feature extractor
+    model = torch.hub.load("pytorch/vision:v0.10.0", args.model, pretrained=True)
+    model.to(device=args.device)
+    model.eval()
+    feature_extractor = create_feature_extractor(model, return_nodes=args.layers)
 
-        model = torch.hub.load("pytorch/vision:v0.10.0", args.model, pretrained=True)
-        model.to(device=args.device)
-        model.eval()
-
-        feature_extractor = create_feature_extractor(model, return_nodes=args.layers)
-
+    # Train PCA on image model output features
+    if os.path.exists(pca_path):
+        with open(pca_path, 'rb') as f:
+            pca = pickle.load(f)
+    else:
         pca = fit_pca(feature_extractor, train_dataloader)
         with open(pca_path, 'wb') as f:
             pickle.dump(pca, f)
 
-        del model
+    # Extract PCA components from image model output features
+    if os.path.exists(train_features_path) and os.path.exists(val_features_path):
+        train_features = np.load(train_features_path)
+        val_features = np.load(val_features_path)
+    else:
+        train_features = extract_features(feature_extractor, train_dataloader, pca)
+        val_features = extract_features(feature_extractor, val_dataloader, pca)
+        np.save(train_features_path, train_features)
+        np.save(val_features_path, val_features)
 
-    train_features = extract_features(feature_extractor, train_dataloader, pca)
-    val_features = extract_features(feature_extractor, val_dataloader, pca)
-
-    del pca
+    del model, pca
 
     fmri_dir = os.path.join(args.data_dir, "training_split", "training_fmri")
     print("Loading left hemisphere training data...")
